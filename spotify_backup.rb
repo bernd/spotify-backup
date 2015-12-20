@@ -37,44 +37,43 @@ class SpotifyHTTP
     me[:id]
   end
 
-  def my_tracks
-    get_all("me/tracks?limit=50").map do |track|
+  def tracks
+    get_all('me/tracks?limit=50').map do |track|
       track = track[:track]
       {
         name: track[:name],
         uri: track[:uri],
         album: {
           name: track[:album][:name],
-          uri: track[:album][:uri],
+          uri: track[:album][:uri]
         },
-        artists: track[:artists].map {|artist|
+        artists: track[:artists].map do |artist|
           {
             name: artist[:name],
-            uri: artist[:uri],
+            uri: artist[:uri]
           }
-        }
+        end
       }
     end
   end
 
-
-  def my_artists
-    get_all("me/following?type=artist&limit=50", :artists).map do |artist|
+  def artists
+    get_all('me/following?type=artist&limit=50', :artists).map do |artist|
       {
         name: artist[:name],
         uri: artist[:uri],
         followers: artist[:followers][:total]
       }
-    end.sort {|a, b| a[:name] <=> b[:name] }
+    end.sort { |a, b| a[:name] <=> b[:name] }
   end
 
-  def my_playlists
+  def playlists
     get_all("users/#{my_id}/playlists?limit=50").map do |playlist|
       {
         name: playlist[:name],
         uri: playlist[:uri],
         public: playlist[:public],
-        tracks: Array(my_playlist_tracks(playlist[:id])).map {|track|
+        tracks: Array(playlist_tracks(playlist[:id])).map do |track|
           track = track[:track]
           {
             name: track[:name],
@@ -83,19 +82,19 @@ class SpotifyHTTP
               name: track[:album][:name],
               uri: track[:album][:uri]
             },
-            artists: Array(track[:artists]).map {|artist|
+            artists: Array(track[:artists]).map do |artist|
               {
                 name: artist[:name],
                 uri: artist[:uri]
               }
-            }
+            end
           }
-        }
+        end
       }
-    end.sort {|a, b| a[:name] <=> b[:name] }
+    end.sort { |a, b| a[:name] <=> b[:name] }
   end
 
-  def my_playlist_tracks(playlist_id)
+  def playlist_tracks(playlist_id)
     get_all("users/#{my_id}/playlists/#{playlist_id}/tracks?limit=100")
   end
 
@@ -114,11 +113,9 @@ class SpotifyHTTP
   end
 
   def get(path, default = {})
-    if @cache.has_key?(path)
-      return @cache.fetch(path)
-    end
+    return @cache.fetch(path) if @cache.key?(path)
 
-    $stderr.puts "==> Getting #{@uri.merge(path)}"
+    $stdout.puts "==> Getting #{@uri.merge(path)}"
     req = Net::HTTP::Get.new(@uri.merge(path))
 
     req['Authorization'] = "Bearer #{@token}"
@@ -136,36 +133,31 @@ class SpotifyHTTP
   end
 end
 
-output = ARGV.shift
+output_directory = ARGV.shift
 
-unless output
-  $stderr.puts("Usage: #{File.basename($0)} /output/path")
+unless output_directory
+  $stderr.puts("Usage: #{File.basename($PROGRAM_NAME)} /output/path")
   exit 1
 end
 
-unless File.exist?(output)
-  $stder.puts("Creating output directory: #{output}")
-  FileUtils.mkdir_p(output)
+if ENV['SPOTIFY_TOKEN'].nil? || ENV['SPOTIFY_TOKEN'].empty?
+  $stderr.puts('You have to set SPOTIFY_TOKEN environment variable.')
+  exit 1
+end
+
+unless File.exist?(output_directory)
+  $stdout.puts("Creating output directory: #{output_directory}")
+  FileUtils.mkdir_p(output_directory)
 end
 
 spotify = SpotifyHTTP.new('https://api.spotify.com/v1/', ENV['SPOTIFY_TOKEN'])
 timestamp = Time.now.strftime('%Y%m%d-%H%M%S')
 
-tracks_file = File.join(output, "spotify-#{timestamp}-tracks.json")
-artists_file = File.join(output, "spotify-#{timestamp}-artists.json")
-playlists_file = File.join(output, "spotify-#{timestamp}-playlists.json")
+%w(tracks artists playlists).each do |backup_type|
+  filename = "spotify-#{timestamp}-#{backup_type}.json"
+  $stdout.puts("Writing #{filename}")
 
-$stderr.puts("Writing #{tracks_file}")
-File.open(tracks_file, 'w') do |f|
-  f.puts(JSON.dump(spotify.my_tracks))
-end
-
-$stderr.puts("Writing #{artists_file}")
-File.open(artists_file, 'w') do |f|
-  f.puts(JSON.dump(spotify.my_artists))
-end
-
-$stderr.puts("Writing #{playlists_file}")
-File.open(playlists_file, 'w') do |f|
-  f.puts(JSON.dump(spotify.my_playlists))
+  File.open(File.join(output_directory, filename), 'w') do |f|
+    f.puts(JSON.dump(spotify.send backup_type))
+  end
 end
