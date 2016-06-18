@@ -27,6 +27,7 @@ class SpotifyHTTP
     @http = Net::HTTP.new(@uri.host, @uri.port)
     @http.use_ssl = @uri.scheme == 'https'
     @cache = {}
+    @retries = 0
   end
 
   def me
@@ -125,10 +126,17 @@ class SpotifyHTTP
 
     case res
     when Net::HTTPSuccess
+      @retries = 0
       @cache[path] = JSON.parse(res.body, symbolize_names: true)
     else
-      $stderr.puts "ERROR: #{res.code} - #{res.message}: #{res}"
-      default
+      if @retries < 10
+        @retries += 1
+        $stderr.puts "ERROR: #{res.code} - #{res.message}: RETRY #{@retries}"
+        get(path, default)
+      else
+        $stderr.puts "ERROR: #{res.code} - #{res.message}: #{res.body}"
+        default
+      end
     end
   end
 end
